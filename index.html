@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stark Command - Logistics Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .stark-card { transition: all 0.2s ease-out; }
+        .stark-card:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
+        .stage-btn { white-space: nowrap; transition: all 0.2s; border: 2px solid transparent; }
+        .stage-btn.active { background-color: #4f46e5; color: white !important; border-color: #4338ca; box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3); transform: scale(1.05); }
+        .custom-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="min-h-screen text-slate-900 pb-20">
+
+    <!-- Loading Overlay -->
+    <div id="loading-screen" class="fixed inset-0 bg-slate-900 z-[100] flex flex-col items-center justify-center text-white text-center p-6">
+        <i class="fa-solid fa-circle-notch fa-spin fa-3x text-indigo-500 mb-6"></i>
+        <h2 class="text-xl font-black italic tracking-[0.2em]">INITIALIZING SECURE LINK...</h2>
+        <p id="loading-status" class="text-slate-500 text-xs mt-4 uppercase tracking-widest font-bold">Checking Satellite Handshake</p>
+        
+        <div id="error-box" class="hidden mt-8 p-6 bg-slate-800 rounded-[2rem] border border-slate-700 max-w-md w-full">
+            <div id="error-log" class="text-red-400 text-[10px] font-mono text-left uppercase space-y-1 mb-6"></div>
+            <button onclick="enableDemoMode()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all">
+                Enter Demo Mode
+            </button>
+            <p class="text-[9px] text-slate-500 mt-4 uppercase font-bold tracking-tighter italic text-center">Demo mode uses mock data for testing UI offline</p>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="bg-slate-900 text-white px-6 py-4 sticky top-0 z-50 shadow-2xl">
+        <div class="max-w-[1600px] mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20">
+                    <i class="fa-solid fa-screwdriver-wrench text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-black italic tracking-tighter leading-none uppercase">Stark Command</h1>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span class="flex h-2 w-2">
+                            <span id="pulse-ping" class="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-emerald-400 opacity-75"></span>
+                            <span id="pulse-dot" class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <p id="connection-status" class="text-[9px] text-indigo-300 font-bold uppercase tracking-widest">Pulse: Active</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex bg-slate-800 p-1 rounded-xl border border-slate-700">
+                <button onclick="setView('dashboard')" id="nav-dashboard" class="px-5 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all bg-indigo-600 text-white shadow-lg">Dashboard</button>
+                <button onclick="setView('body')" id="nav-body" class="px-5 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all text-slate-400 hover:text-white">Body Shop</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Funnel Bar -->
+    <div class="bg-white border-b border-slate-200 sticky top-[68px] z-40 overflow-x-auto shadow-sm custom-scrollbar">
+        <div class="flex p-4 gap-3 max-w-[1600px] mx-auto px-6" id="stage-buttons-container"></div>
+    </div>
+
+    <main class="p-6 md:p-8 max-w-[1600px] mx-auto">
+        <div id="view-dashboard" class="animate-fade-in space-y-8">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6">
+                <div>
+                    <h2 id="current-stage-label" class="text-3xl font-black text-slate-800 uppercase tracking-tighter leading-none">Ready Repair</h2>
+                    <p class="text-xs text-slate-400 font-bold uppercase tracking-[0.2em] mt-2 italic flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Diagnostics: <span id="stream-status">Cloud Stream Nominal</span>
+                    </p>
+                </div>
+                <div class="relative w-full md:w-80">
+                    <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    <input type="text" id="search-input" oninput="handleSearch()" placeholder="Find RO or Name..." class="w-full pl-12 pr-6 py-3 bg-white border-2 border-slate-100 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-indigo-50 focus:border-indigo-500 transition-all outline-none shadow-sm">
+                </div>
+            </div>
+            <div id="unit-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6"></div>
+        </div>
+
+        <div id="view-body" class="hidden animate-fade-in space-y-12">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                <!-- TO BODY -->
+                <div class="bg-white rounded-[3rem] p-10 border border-slate-200 shadow-sm relative overflow-hidden group">
+                   <div class="relative z-10">
+                     <div class="flex items-center justify-between mb-10">
+                        <h3 class="text-2xl font-black text-slate-800 flex items-center gap-4">
+                          <div class="p-3 bg-amber-500 rounded-2xl text-white shadow-xl shadow-amber-100"><i class="fa-solid fa-truck-fast"></i></div>
+                          TO BODY SHOP
+                        </h3>
+                        <span id="count-to-body" class="bg-amber-50 text-amber-600 px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest border border-amber-100 italic">0 Units Out</span>
+                     </div>
+                     <div id="list-to-body" class="space-y-6"></div>
+                   </div>
+                   <i class="fa-solid fa-car-side absolute -right-8 -bottom-8 text-slate-50 text-[12rem] opacity-50 rotate-12 pointer-events-none"></i>
+                </div>
+
+                <!-- FROM BODY -->
+                <div class="bg-white rounded-[3rem] p-10 border border-slate-200 shadow-sm ring-8 ring-indigo-50/50 relative overflow-hidden">
+                   <div class="relative z-10">
+                     <div class="flex items-center justify-between mb-10">
+                        <h3 class="text-2xl font-black text-slate-800 flex items-center gap-4">
+                          <div class="p-3 bg-indigo-600 rounded-2xl text-white shadow-xl shadow-indigo-100"><i class="fa-solid fa-house-circle-check"></i></div>
+                          READY HOME
+                        </h3>
+                        <span id="count-from-body" class="bg-indigo-50 text-indigo-700 px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest border border-indigo-100 italic">0 Inbound</span>
+                     </div>
+                     <div id="list-from-body" class="space-y-6"></div>
+                   </div>
+                   <i class="fa-solid fa-shield-halved absolute -right-8 -bottom-8 text-slate-50 text-[12rem] opacity-50 pointer-events-none"></i>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Briefing Tooltip -->
+    <div class="fixed bottom-8 right-8 z-[60] group">
+        <div class="bg-slate-900 text-white p-8 rounded-[3rem] shadow-[0_35px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-800 max-w-sm hidden group-hover:block animate-fade-in origin-bottom-right mb-6">
+            <h4 class="font-black text-xs uppercase tracking-[0.3em] mb-6 text-indigo-400 flex items-center gap-3">
+                <i class="fa-solid fa-info-circle"></i> Jarvis Briefing
+            </h4>
+            <ul class="space-y-5 text-[11px] font-bold uppercase tracking-widest text-slate-300">
+                <li class="flex gap-4 border-l-2 border-indigo-500 pl-4 py-1">6971: Tony CRV $1k Hold</li>
+                <li class="flex gap-4 border-l-2 border-slate-700 pl-4 py-1">6951: F150 Body Out Trigger</li>
+                <li class="flex gap-4 border-l-2 border-amber-500 pl-4 py-1">Check Qtr Arrivals (6925/6963)</li>
+            </ul>
+        </div>
+        <button class="bg-indigo-600 text-white w-16 h-16 rounded-[2rem] flex items-center justify-center shadow-2xl shadow-indigo-200 hover:rotate-12 transition-all hover:scale-110 active:scale-90">
+            <i class="fa-solid fa-info text-2xl"></i>
+        </button>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const logError = (msg) => {
+            const el = document.getElementById('error-log');
+            const box = document.getElementById('error-box');
+            box.classList.remove('hidden');
+            el.innerHTML += `<div>> ${msg}</div>`;
+        };
+
+        // --- STARK ARC REACTOR CONFIGURATION ---
+        const config = {
+            apiKey: "", // Key is injected by the environment
+            authDomain: "internal-project-default.firebaseapp.com",
+            projectId: "internal-project-default",
+            storageBucket: "internal-project-default.firebasestorage.app",
+            messagingSenderId: "",
+            appId: ""
+        };
+
+        const actualAppId = 'stark-command-center';
+        
+        let vehicles = [];
+        let currentStage = 'ready_repair';
+        let activeView = 'dashboard';
+        let searchTerm = '';
+
+        const stages = [
+            { id: 'ins_review', label: 'Ins. Review', icon: 'fa-file-invoice' },
+            { id: 'supplement', label: 'Supplement', icon: 'fa-circle-exclamation' },
+            { id: 'wait_approval', label: 'Wait Approval', icon: 'fa-hourglass-half' },
+            { id: 'need_drop', label: 'Need Drop (ETA)', icon: 'fa-truck-ramp-box' },
+            { id: 'ready_repair', label: 'Ready Repair', icon: 'fa-circle-check' },
+            { id: 'in_repair', label: 'In Repair', icon: 'fa-wrench' },
+            { id: 'need_glass', label: 'Need Glass', icon: 'fa-droplet' },
+            { id: 'verify', label: 'Verification', icon: 'fa-clipboard-check' },
+            { id: 'complete', label: 'Complete', icon: 'fa-flag-checkered' },
+            { id: 'paid', label: 'Paid', icon: 'fa-dollar-sign' },
+        ];
+
+        // STARTUP SEQUENCE
+        try {
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : config;
+            
+            if (!firebaseConfig.apiKey) {
+                logError("SECURITY CLEARANCE DENIED: ARC REACTOR (API_KEY) OFFLINE.");
+                logError("THIS FILE IS CONFIGURED FOR CLOUD HOSTING.");
+                logError("USE 'DEMO MODE' TO TEST UI ON DESKTOP.");
+            } else {
+                const app = initializeApp(firebaseConfig);
+                const auth = getAuth(app);
+                const db = getFirestore(app);
+
+                document.getElementById('loading-status').innerText = "SCANNING BIOMETRICS...";
+
+                signInAnonymously(auth).then(() => {
+                    document.getElementById('loading-status').innerText = "BEAMING SHOP DATA...";
+                    const q = collection(db, 'artifacts', actualAppId, 'public', 'data', 'vehicles');
+                    onSnapshot(q, (snapshot) => {
+                        vehicles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        render();
+                        document.getElementById('loading-screen').style.display = 'none';
+                    }, (error) => {
+                        logError("SATELLITE LINK LOST: " + error.message);
+                    });
+                }).catch(err => {
+                    logError("AUTHENTICATION FAILED: " + err.message);
+                });
+            }
+        } catch (e) {
+            logError("HARDWARE FAILURE: " + e.message);
+        }
+
+        // DEMO MODE FALLBACK
+        window.enableDemoMode = () => {
+            vehicles = [
+                { ro: "6969", customer: "Rodriguez", vehicle: "23 Grand Cherokee", dropped: "4/25", tech: "Bruno", money: {r:"$", s:"x", t:"x", u:"x"}, status: "in_repair", body: {in: "", out: ""} },
+                { ro: "6971", customer: "Bachura", vehicle: "19 CRV", dropped: "4/27", tech: "HOLD", money: {r:"x", s:"", t:"x", u:"x"}, status: "supplement", body: {in: "", out: ""} },
+                { ro: "6981", customer: "Davis", vehicle: "21 Tundra", dropped: "4/27", tech: "", money: {r:"$", s:"$", t:"$", u:"$"}, status: "ready_repair", body: {in: "", out: ""} },
+                { ro: "6925", customer: "Sims", vehicle: "24 Outlander", dropped: "4/20", tech: "Bruno", money: {r:"x", s:"x", t:"x", u:"x"}, status: "in_repair", body: {in: "4/27", out: ""} },
+                { ro: "6951", customer: "Martin", vehicle: "25 F150", dropped: "4/23", tech: "Special", money: {r:"x", s:"x", t:"x", u:"x"}, status: "in_repair", body: {in: "4/24", out: "4/27"} }
+            ];
+            document.getElementById('connection-status').innerText = "DEMO MODE ACTIVE";
+            document.getElementById('connection-status').classList.replace('text-indigo-300', 'text-amber-500');
+            document.getElementById('pulse-ping').classList.replace('bg-emerald-400', 'bg-amber-400');
+            document.getElementById('pulse-dot').classList.replace('bg-emerald-500', 'bg-amber-500');
+            document.getElementById('stream-status').innerText = "USING MOCK DATA STREAM";
+            document.getElementById('loading-screen').style.display = 'none';
+            render();
+        };
+
+        window.filterByStage = (id) => { currentStage = id; activeView = 'dashboard'; render(); };
+        window.setView = (view) => { activeView = view; render(); };
+        window.handleSearch = () => { searchTerm = document.getElementById('search-input').value.toLowerCase(); render(); };
+
+        function render() {
+            // Update Navigation
+            const isDash = activeView === 'dashboard';
+            document.getElementById('nav-dashboard').className = isDash ? 'px-5 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all bg-indigo-600 text-white shadow-lg' : 'px-5 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all text-slate-400 hover:text-white';
+            document.getElementById('nav-body').className = !isDash ? 'px-5 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all bg-indigo-600 text-white shadow-lg' : 'px-5 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all text-slate-400 hover:text-white';
+
+            // Show/Hide Views
+            document.getElementById('view-dashboard').style.display = isDash ? 'block' : 'none';
+            document.getElementById('view-body').style.display = !isDash ? 'block' : 'none';
+
+            // Render Stage Buttons
+            const btnContainer = document.getElementById('stage-buttons-container');
+            btnContainer.innerHTML = stages.map(s => {
+                const count = vehicles.filter(v => v.status === s.id).length;
+                const isActive = currentStage === s.id;
+                return `
+                    <button onclick="filterByStage('${s.id}')" class="stage-btn flex flex-col items-center min-w-[110px] p-3 rounded-2xl bg-white border-slate-100 text-slate-400 hover:border-indigo-200 ${isActive ? 'active' : ''}">
+                        <i class="fa-solid ${s.icon} text-lg mb-2"></i>
+                        <span class="text-[10px] font-black uppercase tracking-widest">${s.label}</span>
+                        <span class="text-[10px] font-bold mt-1 px-2 rounded-full ${isActive ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-500'}">${count}</span>
+                    </button>
+                `;
+            }).join('');
+
+            if (isDash) {
+                document.getElementById('current-stage-label').innerText = stages.find(s => s.id === currentStage).label;
+                const filtered = vehicles.filter(v => (v.status === currentStage) && (v.customer?.toLowerCase().includes(searchTerm) || v.ro?.toString().includes(searchTerm)));
+                const grid = document.getElementById('unit-grid');
+                if (filtered.length === 0) {
+                    grid.innerHTML = `<div class="col-span-full py-32 text-center text-slate-300 font-black uppercase tracking-widest text-xs italic opacity-40">Zero Units Detected</div>`;
+                } else {
+                    grid.innerHTML = filtered.map(v => `
+                        <div class="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100 stark-card animate-fade-in">
+                            <div class="flex justify-between items-start mb-6">
+                                <span class="bg-slate-900 text-white text-[10px] font-black px-4 py-1.5 rounded-xl tracking-widest uppercase shadow-lg shadow-slate-200">RO #${v.ro}</span>
+                                <div class="flex gap-1.5">
+                                    ${['r','s','t','u'].map(k => `<div class="w-3 h-3 rounded-full border-2 border-white shadow-sm ${v.money?.[k] ? 'bg-emerald-500' : 'bg-slate-200'}"></div>`).join('')}
+                                </div>
+                            </div>
+                            <h3 class="text-xl font-black text-slate-800 uppercase tracking-tighter leading-tight mb-1">${v.customer}</h3>
+                            <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-6 pb-4 border-b border-slate-50">${v.vehicle}</p>
+                            <div class="space-y-4">
+                                <div class="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                    <span>Status Date</span>
+                                    <span class="${v.dropped?.toString().startsWith('ETA') ? 'text-amber-500' : 'text-slate-600'} font-bold">${v.dropped || '---'}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                    <span>Lead Tech</span>
+                                    <span class="text-indigo-600 font-black uppercase italic">${v.tech || '---'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } else {
+                const toBody = vehicles.filter(v => v.body?.in && !v.body?.out);
+                const fromBody = vehicles.filter(v => v.body?.out);
+
+                document.getElementById('count-to-body').innerText = `${toBody.length} Units Out`;
+                document.getElementById('count-from-body').innerText = `${fromBody.length} Inbound`;
+
+                document.getElementById('list-to-body').innerHTML = toBody.map(v => `
+                    <div class="flex items-center justify-between p-6 bg-slate-50 rounded-[2rem] border border-slate-100 hover:bg-amber-50/50 hover:border-amber-200 transition-all stark-card">
+                       <div>
+                         <p class="font-black text-slate-800 text-lg uppercase tracking-tight leading-none mb-1">${v.customer}</p>
+                         <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">RO ${v.ro} • ${v.vehicle}</p>
+                       </div>
+                       <div class="text-right">
+                         <p class="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] mb-1">Departure</p>
+                         <p class="text-sm font-black text-slate-700">${v.body.in}</p>
+                       </div>
+                    </div>
+                `).join('') || '<div class="py-12 text-center text-slate-300 font-black uppercase text-[10px] tracking-widest opacity-40">Area Clear</div>';
+
+                document.getElementById('list-from-body').innerHTML = fromBody.map(v => `
+                    <div class="flex items-center justify-between p-6 bg-indigo-50/30 rounded-[2rem] border border-indigo-100 hover:bg-indigo-50 transition-all stark-card">
+                       <div>
+                         <p class="font-black text-indigo-900 text-lg uppercase tracking-tight leading-none mb-1">${v.customer}</p>
+                         <p class="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">RO ${v.ro} • ${v.vehicle}</p>
+                       </div>
+                       <div class="text-right">
+                         <p class="text-[9px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Return Wrap</p>
+                         <p class="text-sm font-black text-indigo-700">${v.body.out}</p>
+                       </div>
+                    </div>
+                `).join('') || '<div class="py-12 text-center text-slate-300 font-black uppercase text-[10px] tracking-widest opacity-40">No Units Returning</div>';
+            }
+        }
+    </script>
+</body>
+</html>
